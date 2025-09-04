@@ -3,7 +3,17 @@ import os
 import json
 import argparse
 from dbfread import DBF
-import dbf  # Using the 'dbf' library for WRITING
+import dbf
+from pathlib import Path
+
+def resolve_path(path_template, config):
+    """
+    Replaces placeholders in a path template with values from the config.
+    This function can handle both {base_path} and {shared_drive_path}.
+    """
+    resolved_path = path_template.replace("{base_path}", config.get("base_path", ""))
+    resolved_path = resolved_path.replace("{shared_drive_path}", config.get("shared_drive_path", ""))
+    return resolved_path
 
 def save_dataframe_to_dbf(df, output_path):
     """Saves a pandas DataFrame to a DBF file, handling column types and name lengths."""
@@ -32,9 +42,10 @@ def save_dataframe_to_dbf(df, output_path):
     except Exception as e:
         print(f"-> FATAL ERROR: Could not save the final DBF file: {e}")
 
-def process_run_mode(run_config):
+def process_run_mode(run_config, config):
     """Main logic to process a run mode defined in the config."""
-    master_dbf_path = run_config['baseline_dbf_file']
+
+    master_dbf_path = resolve_path(run_config['baseline_dbf_file'], config)
     join_key_master = run_config['join_key_master']
     join_key_csv = run_config['join_key_csv']
 
@@ -61,16 +72,18 @@ def process_run_mode(run_config):
                 source_join_key = source.get('join_key_source', join_key_csv)
 
                 # --- Process Employment Data ---
-                print(f"  -> Reading employment source: {os.path.basename(source['emp_csv'])}")
-                df_empl_source = pd.read_csv(source['emp_csv'])
+                emp_csv_path = resolve_path(source['emp_csv'], config)
+                print(f"  -> Reading employment source: {os.path.basename(emp_csv_path)}")
+                df_empl_source = pd.read_csv(emp_csv_path)
                 emp_value_col = source['emp_value_col']
                 df_empl_agg = df_empl_source[[source_join_key, emp_value_col]].copy()
                 df_empl_agg.rename(columns={source_join_key: join_key_csv, emp_value_col: 'value'}, inplace=True)
                 all_emp_dfs.append(df_empl_agg)
 
                 # --- Process Population Data ---
-                print(f"  -> Reading population source: {os.path.basename(source['pop_csv'])}")
-                df_pop_source = pd.read_csv(source['pop_csv'])
+                pop_csv_path = resolve_path(source['pop_csv'], config)
+                print(f"  -> Reading population source: {os.path.basename(pop_csv_path)}")
+                df_pop_source = pd.read_csv(pop_csv_path)
                 if source['pop_agg_method'] == 'size':
                     if 'block_hid' in df_pop_source.columns and source_join_key not in df_pop_source.columns:
                         df_pop_source[source_join_key] = df_pop_source['block_hid'].astype(str).str.split('_').str[0].astype(int)
@@ -79,7 +92,7 @@ def process_run_mode(run_config):
                     pop_value_col = source['pop_value_col']
                     df_pop_agg = df_pop_source.groupby(source_join_key)[pop_value_col].sum().reset_index()
                     df_pop_agg.rename(columns={pop_value_col: 'value'}, inplace=True)
-                
+                    
                 df_pop_agg.rename(columns={source_join_key: join_key_csv}, inplace=True)
                 all_pop_dfs.append(df_pop_agg)
 
@@ -108,8 +121,8 @@ def process_run_mode(run_config):
             print(f"-> WARNING: Could not process dataset for {year}. Skipping. Error: {e}")
             continue
             
-    save_dataframe_to_dbf(df_merged, run_config['output_file'])
-
+    output_path = resolve_path(run_config['output_file'], config)
+    save_dataframe_to_dbf(df_merged, output_path)
 
 def main():
     """Parses command line arguments and initiates data processing."""
@@ -131,7 +144,7 @@ def main():
 
     if target_config:
         print(f"Starting process for run mode: '{run_mode_arg}'")
-        process_run_mode(target_config)
+        process_run_mode(target_config, config)
     else:
         print(f"FATAL ERROR: Run mode '{run_mode_arg}' not found in '{config_file}'.")
         return

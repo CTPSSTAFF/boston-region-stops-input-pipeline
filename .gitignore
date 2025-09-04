@@ -1,3 +1,7 @@
+# Pipeline Data Ignore
+*/Pipeline Input Data/
+*/Pipeline Output Data/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
